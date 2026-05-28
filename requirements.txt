@@ -11,3 +11,4 @@ rasterio
 matplotlib
 contextily
 matplotlib-scalebar
+earthengine-api
