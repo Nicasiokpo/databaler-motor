@@ -122,88 +122,76 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
 
   import matplotlib.patches as mpatches
 
-    # 8. COMPOSICIÓN FINAL: PLANTILLA DE IMPRESIÓN PROFESIONAL A4 (FULL MAPA)
-    print("8/8 Armando composición cartográfica final profesional...")
+    # 8. COMPOSICIÓN FINAL: PANTALLA COMPLETA (Estilo "El Recuerdo")
+    print("8/8 Armando composición cartográfica final...")
     
-    # 1. Forzamos la hoja A4 apaisada EXACTA (pulgadas)
     fig = plt.figure(figsize=(11.69, 8.27))
-    
-    # 2. Dividimos el papel en dos "marcos" porcentuales [Izquierda, Abajo, Ancho, Alto]
-    # Eje 1: El Mapa Satelital + Rinde ocupa el 75% izquierdo de la hoja
-    ax_mapa = fig.add_axes([0, 0, 0.75, 1]) 
-    
-    # Eje 2: Eje invisible para el Membrete ocupa el 25% derecho (para que nada se pise)
-    ax_info = fig.add_axes([0.78, 0.05, 0.20, 0.90]) 
-    
-    # Escondemos los números de coordenadas (los ticks)
-    ax_mapa.set_axis_off()
-    ax_info.set_axis_off()
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_axis_off()
 
-    # --- ZONA IZQUIERDA: EL MAPA ---
     src = rasterio.open(ruta_final_tif)
-    banda_datos = src.read(1)
     minx, miny, maxx, maxy = src.bounds
     
-    # Dibujamos tu TIFF de rinde coloreado (con transparencia)
-    show(banda_datos, transform=src.transform, ax=ax_mapa, cmap=cmap, norm=norm, alpha=0.8)
-    
-    # Dibujamos el satélite limitando el encuadre estricto al lote (+ 100m margen)
-    margen_encuadre = 100
+    # ✅ FIX 1: margen chico para que el lote llene el frame
+    margen = 30
+    ax.set_xlim(minx - margen, maxx + margen)
+    ax.set_ylim(miny - margen, maxy + margen)
+
+    # ✅ FIX 2: satélite PRIMERO (zorder bajo)
     try:
-        ctx.add_basemap(ax_mapa, crs=src.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
-        # Forzamos el zoom al lote real (contextily a veces trae el mundo entero)
-        ax_mapa.set_xlim(minx - margen_encuadre, maxx + margen_encuadre)
-        ax_mapa.set_ylim(miny - margen_encuadre, maxy + margen_encuadre)
+        ctx.add_basemap(ax, crs=src.crs.to_string(), source=ctx.providers.Esri.WorldImagery, zorder=1)
     except Exception as e:
-        print(f"   [Advertencia] Sin satélite de fondo: {e}")
+        print(f"   [Advertencia] Sin satélite: {e}")
 
-    # Escala métrica adentro del mapa (abajo a la izquierda)
-    # Le ponemos fondo blanco opaco para que se lea perfecto
-    escala = ScaleBar(1, location='lower left', pad=0.5, color='black', box_color='white', box_alpha=0.8)
-    ax_mapa.add_artist(escala)
+    # ✅ FIX 3: imshow con la imagen RGBA ya coloreada (no show() con banda cruda)
+    extent = [minx, maxx, miny, maxy]
+    # Leer las 4 bandas RGBA del GeoTIFF
+    rgba = src.read([1, 2, 3, 4])          # shape: (4, H, W)
+    rgba = np.moveaxis(rgba, 0, -1)        # shape: (H, W, 4)
+    rgba = rgba.astype(np.float32) / 255.0
+    ax.imshow(rgba, extent=extent, origin='upper', zorder=2, alpha=0.85,
+              aspect='auto', interpolation='nearest')
 
-    # Flecha Norte adentro del mapa (arriba a la izquierda del área del mapa)
-    ax_mapa.annotate('N', xy=(0.03, 0.97), xytext=(0.03, 0.90),
-                arrowprops=dict(facecolor='black', width=3, headwidth=10),
-                ha='center', va='center', fontsize=18, fontweight='bold',
+    # Info box
+    texto_info = f"MAPA DE RENDIMIENTO\nCULTIVO: {cultivo.upper()}\nESTABLECIMIENTO: {establecimiento.upper()}\nLOTE: {lote.upper()}"
+    ax.text(0.02, 0.98, texto_info, transform=ax.transAxes, fontsize=15,
+            verticalalignment='top', fontweight='bold', color='black',
+            bbox=dict(boxstyle='square,pad=0.6', facecolor='white', alpha=0.9,
+                      edgecolor='black', linewidth=1), zorder=5)
+
+    # Flecha norte
+    ax.annotate('N', xy=(0.96, 0.96), xytext=(0.96, 0.89),
+                arrowprops=dict(facecolor='black', width=4, headwidth=12),
+                ha='center', va='center', fontsize=20, fontweight='bold', color='black',
                 xycoords='axes fraction', textcoords='axes fraction',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='none'))
+                bbox=dict(boxstyle='square,pad=0.4', facecolor='white', alpha=0.9,
+                          edgecolor='black', linewidth=1), zorder=5)
 
-    # --- ZONA DERECHA: EL MEMBRETE PROFESIONAL (Sin pisar nada) ---
-    
-    # Títulos principales y Datos del Lote bien acomodados arriba
-    texto_titulo = f"REPORTE DE RINDE\n\nCultivo:\n{cultivo.upper()}\n\nEstablecimiento:\n{establecimiento.upper()}\n\nLote:\n{lote.upper()}"
-    ax_info.text(0, 1.0, texto_titulo, transform=ax_info.transAxes, 
-                 fontsize=15, verticalalignment='top', fontweight='bold', color='#1a202c')
-
-    # Leyenda de colores ubicada en la mitad del panel derecho
-    # Recreamos los cuadraditos de color en base a tu rampa (Paso 5)
+    # Leyenda
     etiquetas = [f"<= {limites[1]:.2f}", 
                  f"{limites[1]:.2f} - {limites[2]:.2f}", 
                  f"{limites[2]:.2f} - {limites[3]:.2f}", 
                  f"{limites[3]:.2f} - {limites[4]:.2f}", 
                  f"> {limites[4]:.2f}"]
-    
     parches = [mpatches.Patch(color=colores_hex[i], label=etiquetas[i]) for i in range(5)]
-    
-    # Título de la leyenda en negrita y tamaño claro
-    leyenda = ax_info.legend(handles=parches, loc='center left', title='Referencias (t/ha)', 
-                             frameon=False, fontsize=12, title_fontsize=14)
+    leyenda = ax.legend(handles=parches, loc='lower right', title='Referencias (t/ha)',
+                        framealpha=0.9, facecolor='white', edgecolor='black',
+                        fontsize=12, title_fontsize=14, bbox_to_anchor=(0.98, 0.02),
+                        zorder=5)
     leyenda.get_title().set_fontweight('bold')
+    leyenda.get_frame().set_linewidth(1)
 
-    # Al final del panel derecho, le agregamos el logo de "LoteLimpio" como marca de agua
-    ax_info.text(1.0, 0, "LoteLimpio", transform=ax_info.transAxes,
-                 fontsize=18, fontweight='extrabold', color='#059669', # Emerald 600
-                 ha='right', va='bottom', alpha=0.6)
+    # Escala
+    escala = ScaleBar(1, location='lower center', pad=0.5, color='black',
+                      box_color='white', box_alpha=0.9)
+    ax.add_artist(escala)
 
-    # --- GUARDADO FINAL PERFECTO ---
     ruta_png_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.png")
     ruta_pdf_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.pdf")
     
-    # Clave de la solución: Sacamos bbox_inches='tight' y pad_inches
-    # facecolor='white' asegura que la zona del membrete derecho sea blanca impoluta
-    plt.savefig(ruta_png_final, dpi=300, facecolor='white', bbox_inches=None, pad_inches=0)
-    plt.savefig(ruta_pdf_final, dpi=300, facecolor='white', bbox_inches=None, pad_inches=0)
+    plt.savefig(ruta_png_final, dpi=300, bbox_inches='tight', pad_inches=0)
+    plt.savefig(ruta_pdf_final, dpi=300, bbox_inches='tight', pad_inches=0)
     plt.close(fig)
+    src.close()
 
     return ruta_final_tif, ruta_final_pdf, ruta_txt, ruta_png_final, ruta_pdf_final
