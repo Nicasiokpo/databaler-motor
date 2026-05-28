@@ -129,52 +129,79 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
     except Exception as e:
         print(f"   [ERROR] GDAL falló: {e}")
         ruta_final_pdf = None
-# 8. COMPOSICIÓN FINAL (PDF Y PNG DE PRESENTACIÓN)
+import matplotlib.patches as mpatches
+
+    # 8. COMPOSICIÓN FINAL: PANTALLA COMPLETA (Estilo "El Recuerdo")
     print("8/8 Armando composición cartográfica final...")
     
-    # Creamos un lienzo tamaño A4 apaisado (11.69 x 8.27 pulgadas)
-    fig, ax = plt.subplots(figsize=(11.69, 8.27))
+    # 1. Hoja A4 apaisada
+    fig = plt.figure(figsize=(11.69, 8.27))
     
-    # Escondemos los ejes (los números de las coordenadas alrededor del mapa)
+    # 2. El eje ocupa el 100% de la imagen [Izquierda, Abajo, Ancho, Alto]
+    # No dejamos ningún borde blanco alrededor de la foto satelital
+    ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
-    
-    # 8.1 Dibujamos el raster (el tif coloreado) que acabamos de crear
+
+    # --- DIBUJAR RASTER Y SATÉLITE ---
     src = rasterio.open(ruta_final_tif)
-    show(src, ax=ax)
+    banda_datos = src.read(1)
+    minx, miny, maxx, maxy = src.bounds
     
-    # 8.2 Agregamos el mapa satelital de fondo (ESRI World Imagery)
-    # Usamos el mismo CRS (sistema de coordenadas) que tu raster
+    # Le damos 200 metros extra de margen al encuadre. 
+    # Esto aleja la cámara y crea espacio en las esquinas para los cuadros blancos.
+    margen = 200
+    ax.set_xlim(minx - margen, maxx + margen)
+    ax.set_ylim(miny - margen, maxy + margen)
+
+    # Dibujamos tu TIFF coloreado
+    show(banda_datos, transform=src.transform, ax=ax, cmap=cmap, norm=norm, alpha=0.8)
+    
     try:
         ctx.add_basemap(ax, crs=src.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
     except Exception as e:
-        print(f"   [Advertencia] No se pudo cargar el satélite de fondo: {e}")
+        print(f"   [Advertencia] Sin satélite: {e}")
 
-    # 8.3 Barra de Escala (Abajo, centrada al medio)
-    # Como tu raster está en UTM (metros), 1 unidad = 1 metro
-    escala = ScaleBar(1, location='lower center', pad=0.5, color='black', box_color='white', box_alpha=0.8)
+    # --- CAJAS FLOTANTES (OVERLAYS) ---
+    
+    # A. Cuadro de Info (Arriba Izquierda)
+    texto_info = f"MAPA DE RENDIMIENTO\nCULTIVO: {cultivo.upper()}\nESTABLECIMIENTO: {establecimiento.upper()}\nLOTE: {lote.upper()}"
+    ax.text(0.02, 0.98, texto_info, transform=ax.transAxes, fontsize=15,
+            verticalalignment='top', fontweight='bold', color='black',
+            bbox=dict(boxstyle='square,pad=0.6', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1))
+
+    # B. Flecha Norte (Arriba Derecha)
+    ax.annotate('N', xy=(0.96, 0.96), xytext=(0.96, 0.89),
+                arrowprops=dict(facecolor='black', width=4, headwidth=12),
+                ha='center', va='center', fontsize=20, fontweight='bold', color='black',
+                xycoords='axes fraction', textcoords='axes fraction',
+                bbox=dict(boxstyle='square,pad=0.4', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1))
+
+    # C. Leyenda de Colores (Abajo Derecha)
+    etiquetas = [f"<= {limites[1]:.2f}", 
+                 f"{limites[1]:.2f} - {limites[2]:.2f}", 
+                 f"{limites[2]:.2f} - {limites[3]:.2f}", 
+                 f"{limites[3]:.2f} - {limites[4]:.2f}", 
+                 f"> {limites[4]:.2f}"]
+    
+    parches = [mpatches.Patch(color=colores_hex[i], label=etiquetas[i]) for i in range(5)]
+    leyenda = ax.legend(handles=parches, loc='lower right', title='Referencias (t/ha)', 
+                        framealpha=0.9, facecolor='white', edgecolor='black',
+                        fontsize=12, title_fontsize=14, bbox_to_anchor=(0.98, 0.02))
+    leyenda.get_title().set_fontweight('bold')
+    leyenda.get_frame().set_linewidth(1)
+
+    # D. Escala Métrica (Abajo Centro)
+    escala = ScaleBar(1, location='lower center', pad=0.5, color='black', box_color='white', box_alpha=0.9)
     ax.add_artist(escala)
 
-    # 8.4 Flecha del Norte (Esquina Superior Derecha)
-    # Usamos coordenadas relativas de los ejes (0 a 1) para posicionarlo siempre igual
-    ax.annotate('N', xy=(0.96, 0.96), xytext=(0.96, 0.88),
-                arrowprops=dict(facecolor='black', width=4, headwidth=12),
-                ha='center', va='center', fontsize=20, fontweight='bold',
-                xycoords='axes fraction', textcoords='axes fraction',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='none'))
-
-    # 8.5 Cuadro de Datos (Esquina Superior Izquierda)
-    texto_info = f"ESTABLECIMIENTO: {establecimiento.upper()}\nLOTE: {lote.upper()}\nCULTIVO: {cultivo.upper()}\nMAPA DE RENDIMIENTO"
-    ax.text(0.02, 0.98, texto_info, transform=ax.transAxes, fontsize=14,
-            verticalalignment='top', fontweight='bold', color='black',
-            bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.9, edgecolor='gray'))
-
-    # Guardamos los archivos de alta calidad
+    # --- GUARDAR COMPOSICIÓN ---
     ruta_png_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.png")
     ruta_pdf_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.pdf")
     
-    plt.savefig(ruta_png_final, dpi=300, bbox_inches='tight', facecolor='white')
-    plt.savefig(ruta_pdf_final, dpi=300, bbox_inches='tight', facecolor='white')
-    plt.close(fig) # Cerramos el lienzo para liberar memoria
+    # Al no usar bbox_inches='tight', se respeta el tamaño A4 exacto que definimos arriba
+    plt.savefig(ruta_png_final, dpi=300)
+    plt.savefig(ruta_pdf_final, dpi=300)
+    plt.close(fig)
 
     return ruta_final_tif, ruta_final_pdf, ruta_txt, ruta_png_final, ruta_pdf_final
   
