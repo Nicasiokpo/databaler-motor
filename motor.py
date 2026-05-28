@@ -177,8 +177,7 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
     parches = [mpatches.Patch(color=colores_hex[i], label=etiquetas[i]) for i in range(5)]
     leyenda = ax.legend(handles=parches, loc='lower right', title='Referencias (t/ha)',
                         framealpha=0.9, facecolor='white', edgecolor='black',
-                        fontsize=12, title_fontsize=14, bbox_to_anchor=(0.98, 0.02),
-                        zorder=5)
+                        fontsize=12, title_fontsize=14, bbox_to_anchor=(0.98, 0.02))
     leyenda.get_title().set_fontweight('bold')
     leyenda.get_frame().set_linewidth(1)
 
