@@ -6,6 +6,10 @@ import shutil
 import zipfile
 import uuid
 import traceback
+import motor_ndvi 
+print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+print("APLICACIÓN INICIADA: api.py cargó correctamente el motor_ndvi")
+print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 from motor import ejecutar_pipeline
 
 app = FastAPI(title="Motor de Rinde LoteLimpio")
