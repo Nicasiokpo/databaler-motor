@@ -1,0 +1,113 @@
+import geopandas as gpd
+import pandas as pd
+import h3
+import numpy as np
+from shapely.geometry import Polygon
+from scipy.interpolate import griddata
+from scipy.ndimage import gaussian_filter
+import rasterio
+from rasterio.transform import from_origin
+from rasterio.features import geometry_mask
+import matplotlib.colors as mcolors
+import os
+
+def ejecutar_pipeline(ruta_shp, carpeta_salida):
+    print("--- INICIANDO PIPELINE AGRONÓMICO ---")
+    columna_rinde = 'VRYIELDMAS'
+    
+    # 1. CARGA
+    print("1/6 Cargando archivo crudo...")
+    mapa_crudo = gpd.read_file(ruta_shp)
+    
+    # --- ARREGLO DEL CRS ---
+    if mapa_crudo.crs is None:
+        print("   El mapa no tiene CRS, asumiendo WGS84 (GPS)...")
+        mapa_crudo.set_crs("EPSG:4326", inplace=True)
+    elif mapa_crudo.crs != "EPSG:4326":
+        print("   Reproyectando a WGS84...")
+        mapa_crudo = mapa_crudo.to_crs("EPSG:4326")
+        
+    # 2. GRILLA H3
+    print("2/6 Calculando grilla H3...")
+    RESOLUCION = 13
+    mapa_crudo['hex_id'] = mapa_crudo.geometry.apply(lambda geom: h3.latlng_to_cell(geom.y, geom.x, RESOLUCION))
+    
+    # Forzamos numérico respetando el uso del punto decimal (Ej: 2.4)
+    mapa_crudo[columna_rinde] = pd.to_numeric(mapa_crudo[columna_rinde], errors='coerce')
+    
+    grilla_agrupada = mapa_crudo.groupby('hex_id')[columna_rinde].mean().reset_index()
+    grilla_agrupada['geometry'] = grilla_agrupada['hex_id'].apply(lambda hid: Polygon([(lon, lat) for lat, lon in h3.cell_to_boundary(hid)]))
+    mapa_hex = gpd.GeoDataFrame(grilla_agrupada, geometry='geometry', crs="EPSG:4326")
+    
+    # 3. FILTRO
+    print("3/6 Filtrando valores...")
+    rinde_min = 0.5 # Volvemos a toneladas
+    rinde_max = 3.5
+    mapa_limpio = mapa_hex[(mapa_hex[columna_rinde] >= rinde_min) & (mapa_hex[columna_rinde] <= rinde_max)]
+    
+    if len(mapa_limpio) == 0:
+        raise ValueError(f"¡El mapa quedó vacío tras el filtro ({rinde_min} a {rinde_max} t/ha)!")
+
+    # 4. INTERPOLACIÓN Y SUAVIZADO
+    print("4/6 Interpolando...")
+    crs_metros = mapa_limpio.estimate_utm_crs()
+    mapa_limpio = mapa_limpio.to_crs(crs_metros)
+    puntos = np.array([(geom.centroid.x, geom.centroid.y) for geom in mapa_limpio.geometry])
+    valores = mapa_limpio[columna_rinde].values
+    
+    res = 5
+    min_x, min_y, max_x, max_y = mapa_limpio.total_bounds
+    grid_x, grid_y = np.meshgrid(np.arange(min_x, max_x, res), np.arange(max_y, min_y, -res))
+    
+    sup = griddata(puntos, valores, (grid_x, grid_y), method='linear')
+    sup = np.where(np.isnan(sup), griddata(puntos, valores, (grid_x, grid_y), method='nearest'), sup)
+    sup = gaussian_filter(sup, sigma=2.0)
+    
+    print("   Recortando contorno...")
+    contorno_suave = mapa_limpio.geometry.unary_union.buffer(8, join_style=1).buffer(-8, join_style=1)
+    transform = from_origin(min_x, max_y, res, res)
+    mascara = geometry_mask([contorno_suave], transform=transform, invert=True, out_shape=sup.shape)
+    sup[~mascara] = np.nan
+
+    # 5. COLORES
+    print("5/6 Renderizando colores RGB...")
+    datos_validos = sup[~np.isnan(sup)]
+    limites = np.percentile(datos_validos, [0, 20, 40, 60, 80, 100])
+    colores_hex = ['#d7191c', '#ffb101', '#ffff01', '#17ae00', '#015800']
+    cmap = mcolors.ListedColormap(colores_hex)
+    norm = mcolors.BoundaryNorm(limites, cmap.N)
+    
+    imagen_coloreada = cmap(norm(sup))
+    imagen_coloreada[np.isnan(sup), 3] = 0.0 
+    imagen = (imagen_coloreada * 255).astype(np.uint8)
+    
+    # 6. GUARDAR
+    import subprocess # Asegurate de agregar esto arriba en los imports
+
+    # ... (todo tu código hasta el paso 5) ...
+
+    # 6. GUARDAR GEOTIFF
+    print("6/7 Guardando GeoTIFF final...")
+    ruta_final_tif = os.path.join(carpeta_salida, "resultado.tif")
+    
+    with rasterio.open(
+        ruta_final_tif, 'w', driver='GTiff', 
+        height=imagen.shape[0], width=imagen.shape[1], 
+        count=4, dtype='uint8', crs=crs_metros, transform=transform,
+        nodata=0 
+    ) as dst:
+        for i in range(4): dst.write(imagen[:, :, i], i+1)
+            
+    # 7. GENERAR GEOPDF PARA AVENZA MAPS
+    print("7/7 Compilando GeoPDF georreferenciado...")
+    ruta_final_pdf = os.path.join(carpeta_salida, "mapa_campo.pdf")
+    
+    try:
+        subprocess.run(["gdal_translate", "-of", "PDF", ruta_final_tif, ruta_final_pdf], check=True)
+        print("   ¡GeoPDF compilado con éxito!")
+    except Exception as e:
+        print(f"   [ERROR] GDAL falló: {e}")
+        ruta_final_pdf = None
+
+    # AHORA EL MOTOR DEVUELVE DOS ARCHIVOS
+    return ruta_final_tif, ruta_final_pdf
