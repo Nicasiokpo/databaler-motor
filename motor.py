@@ -17,6 +17,7 @@ from rasterio.plot import show
 import subprocess
 import matplotlib.patches as mpatches
 
+
 def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, establecimiento, cultivo):
     print("--- INICIANDO PIPELINE AGRONÓMICO ---")
     columna_rinde = 'VRYIELDMAS'
@@ -120,7 +121,7 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
         print(f"   [ERROR] GDAL falló: {e}")
         ruta_final_pdf = None
 
-  import matplotlib.patches as mpatches
+  
 
     # 8. COMPOSICIÓN FINAL: PANTALLA COMPLETA (Estilo "El Recuerdo")
     print("8/8 Armando composición cartográfica final...")
