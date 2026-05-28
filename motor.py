@@ -14,14 +14,15 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 from matplotlib_scalebar.scalebar import ScaleBar
 from rasterio.plot import show
+import subprocess
+import matplotlib.patches as mpatches
 
 def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, establecimiento, cultivo):
     print("--- INICIANDO PIPELINE AGRONÓMICO ---")
-    # ...
     columna_rinde = 'VRYIELDMAS'
     
     # 1. CARGA
-    print("1/6 Cargando archivo crudo...")
+    print("1/8 Cargando archivo crudo...")
     mapa_crudo = gpd.read_file(ruta_shp)
     
     # --- ARREGLO DEL CRS ---
@@ -33,27 +34,23 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
         mapa_crudo = mapa_crudo.to_crs("EPSG:4326")
         
     # 2. GRILLA H3
-    print("2/6 Calculando grilla H3...")
+    print("2/8 Calculando grilla H3...")
     RESOLUCION = 13
     mapa_crudo['hex_id'] = mapa_crudo.geometry.apply(lambda geom: h3.latlng_to_cell(geom.y, geom.x, RESOLUCION))
     
-    # Forzamos numérico respetando el uso del punto decimal (Ej: 2.4)
     mapa_crudo[columna_rinde] = pd.to_numeric(mapa_crudo[columna_rinde], errors='coerce')
     
     grilla_agrupada = mapa_crudo.groupby('hex_id')[columna_rinde].mean().reset_index()
     grilla_agrupada['geometry'] = grilla_agrupada['hex_id'].apply(lambda hid: Polygon([(lon, lat) for lat, lon in h3.cell_to_boundary(hid)]))
     mapa_hex = gpd.GeoDataFrame(grilla_agrupada, geometry='geometry', crs="EPSG:4326")
     
-    # 3. FILTRO
     # 3. FILTRO Y ESTADÍSTICAS
-    print(f"3/7 Filtrando valores entre {rinde_min} y {rinde_max}...")
-    
+    print(f"3/8 Filtrando valores entre {rinde_min} y {rinde_max}...")
     mapa_limpio = mapa_hex[(mapa_hex[columna_rinde] >= rinde_min) & (mapa_hex[columna_rinde] <= rinde_max)]
     
     if len(mapa_limpio) == 0:
         raise ValueError(f"¡El mapa quedó vacío tras el filtro!")
 
-    # --- CÁLCULO DE ESTADÍSTICAS DEL LOTE LIMPIO ---
     media = mapa_limpio[columna_rinde].mean()
     std = mapa_limpio[columna_rinde].std()
     cv = (std / media) * 100 if media > 0 else 0
@@ -70,7 +67,7 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
         f.write(f"Hexágonos útiles: {len(mapa_limpio)}\n")
 
     # 4. INTERPOLACIÓN Y SUAVIZADO
-    print("4/6 Interpolando...")
+    print("4/8 Interpolando...")
     crs_metros = mapa_limpio.estimate_utm_crs()
     mapa_limpio = mapa_limpio.to_crs(crs_metros)
     puntos = np.array([(geom.centroid.x, geom.centroid.y) for geom in mapa_limpio.geometry])
@@ -91,7 +88,7 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
     sup[~mascara] = np.nan
 
     # 5. COLORES
-    print("5/6 Renderizando colores RGB...")
+    print("5/8 Renderizando colores RGB...")
     datos_validos = sup[~np.isnan(sup)]
     limites = np.percentile(datos_validos, [0, 20, 40, 60, 80, 100])
     colores_hex = ['#d7191c', '#ffb101', '#ffff01', '#17ae00', '#015800']
@@ -102,15 +99,9 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
     imagen_coloreada[np.isnan(sup), 3] = 0.0 
     imagen = (imagen_coloreada * 255).astype(np.uint8)
     
-    # 6. GUARDAR
-    import subprocess # Asegurate de agregar esto arriba en los imports
-
-    # ... (todo tu código hasta el paso 5) ...
-
     # 6. GUARDAR GEOTIFF
-    print("6/7 Guardando GeoTIFF final...")
+    print("6/8 Guardando GeoTIFF final...")
     ruta_final_tif = os.path.join(carpeta_salida, "resultado.tif")
-    
     with rasterio.open(
         ruta_final_tif, 'w', driver='GTiff', 
         height=imagen.shape[0], width=imagen.shape[1], 
@@ -120,40 +111,30 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
         for i in range(4): dst.write(imagen[:, :, i], i+1)
             
     # 7. GENERAR GEOPDF PARA AVENZA MAPS
-    print("7/7 Compilando GeoPDF georreferenciado...")
+    print("7/8 Compilando GeoPDF georreferenciado...")
     ruta_final_pdf = os.path.join(carpeta_salida, "mapa_campo.pdf")
-    
     try:
         subprocess.run(["gdal_translate", "-of", "PDF", ruta_final_tif, ruta_final_pdf], check=True)
         print("   ¡GeoPDF compilado con éxito!")
     except Exception as e:
         print(f"   [ERROR] GDAL falló: {e}")
         ruta_final_pdf = None
-import matplotlib.patches as mpatches
 
     # 8. COMPOSICIÓN FINAL: PANTALLA COMPLETA (Estilo "El Recuerdo")
     print("8/8 Armando composición cartográfica final...")
     
-    # 1. Hoja A4 apaisada
     fig = plt.figure(figsize=(11.69, 8.27))
-    
-    # 2. El eje ocupa el 100% de la imagen [Izquierda, Abajo, Ancho, Alto]
-    # No dejamos ningún borde blanco alrededor de la foto satelital
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_axis_off()
 
-    # --- DIBUJAR RASTER Y SATÉLITE ---
     src = rasterio.open(ruta_final_tif)
     banda_datos = src.read(1)
     minx, miny, maxx, maxy = src.bounds
     
-    # Le damos 200 metros extra de margen al encuadre. 
-    # Esto aleja la cámara y crea espacio en las esquinas para los cuadros blancos.
     margen = 200
     ax.set_xlim(minx - margen, maxx + margen)
     ax.set_ylim(miny - margen, maxy + margen)
 
-    # Dibujamos tu TIFF coloreado
     show(banda_datos, transform=src.transform, ax=ax, cmap=cmap, norm=norm, alpha=0.8)
     
     try:
@@ -161,22 +142,17 @@ import matplotlib.patches as mpatches
     except Exception as e:
         print(f"   [Advertencia] Sin satélite: {e}")
 
-    # --- CAJAS FLOTANTES (OVERLAYS) ---
-    
-    # A. Cuadro de Info (Arriba Izquierda)
     texto_info = f"MAPA DE RENDIMIENTO\nCULTIVO: {cultivo.upper()}\nESTABLECIMIENTO: {establecimiento.upper()}\nLOTE: {lote.upper()}"
     ax.text(0.02, 0.98, texto_info, transform=ax.transAxes, fontsize=15,
             verticalalignment='top', fontweight='bold', color='black',
             bbox=dict(boxstyle='square,pad=0.6', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1))
 
-    # B. Flecha Norte (Arriba Derecha)
     ax.annotate('N', xy=(0.96, 0.96), xytext=(0.96, 0.89),
                 arrowprops=dict(facecolor='black', width=4, headwidth=12),
                 ha='center', va='center', fontsize=20, fontweight='bold', color='black',
                 xycoords='axes fraction', textcoords='axes fraction',
                 bbox=dict(boxstyle='square,pad=0.4', facecolor='white', alpha=0.9, edgecolor='black', linewidth=1))
 
-    # C. Leyenda de Colores (Abajo Derecha)
     etiquetas = [f"<= {limites[1]:.2f}", 
                  f"{limites[1]:.2f} - {limites[2]:.2f}", 
                  f"{limites[2]:.2f} - {limites[3]:.2f}", 
@@ -190,18 +166,14 @@ import matplotlib.patches as mpatches
     leyenda.get_title().set_fontweight('bold')
     leyenda.get_frame().set_linewidth(1)
 
-    # D. Escala Métrica (Abajo Centro)
     escala = ScaleBar(1, location='lower center', pad=0.5, color='black', box_color='white', box_alpha=0.9)
     ax.add_artist(escala)
 
-    # --- GUARDAR COMPOSICIÓN ---
     ruta_png_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.png")
     ruta_pdf_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.pdf")
     
-    # Al no usar bbox_inches='tight', se respeta el tamaño A4 exacto que definimos arriba
     plt.savefig(ruta_png_final, dpi=300)
     plt.savefig(ruta_pdf_final, dpi=300)
     plt.close(fig)
 
     return ruta_final_tif, ruta_final_pdf, ruta_txt, ruta_png_final, ruta_pdf_final
-  
