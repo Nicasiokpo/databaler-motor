@@ -10,8 +10,12 @@ from rasterio.transform import from_origin
 from rasterio.features import geometry_mask
 import matplotlib.colors as mcolors
 import os
+import matplotlib.pyplot as plt
+import contextily as ctx
+from matplotlib_scalebar.scalebar import ScaleBar
+from rasterio.plot import show
 
-def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max):
+def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, establecimiento, cultivo):
     print("--- INICIANDO PIPELINE AGRONÓMICO ---")
     # ...
     columna_rinde = 'VRYIELDMAS'
@@ -125,6 +129,52 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max):
     except Exception as e:
         print(f"   [ERROR] GDAL falló: {e}")
         ruta_final_pdf = None
+# 8. COMPOSICIÓN FINAL (PDF Y PNG DE PRESENTACIÓN)
+    print("8/8 Armando composición cartográfica final...")
+    
+    # Creamos un lienzo tamaño A4 apaisado (11.69 x 8.27 pulgadas)
+    fig, ax = plt.subplots(figsize=(11.69, 8.27))
+    
+    # Escondemos los ejes (los números de las coordenadas alrededor del mapa)
+    ax.set_axis_off()
+    
+    # 8.1 Dibujamos el raster (el tif coloreado) que acabamos de crear
+    src = rasterio.open(ruta_final_tif)
+    show(src, ax=ax)
+    
+    # 8.2 Agregamos el mapa satelital de fondo (ESRI World Imagery)
+    # Usamos el mismo CRS (sistema de coordenadas) que tu raster
+    try:
+        ctx.add_basemap(ax, crs=src.crs.to_string(), source=ctx.providers.Esri.WorldImagery)
+    except Exception as e:
+        print(f"   [Advertencia] No se pudo cargar el satélite de fondo: {e}")
 
-    # Al final de todo tu motor.py, cambiá el return por esto:
-    return ruta_final_tif, ruta_final_pdf, ruta_txt
+    # 8.3 Barra de Escala (Abajo, centrada al medio)
+    # Como tu raster está en UTM (metros), 1 unidad = 1 metro
+    escala = ScaleBar(1, location='lower center', pad=0.5, color='black', box_color='white', box_alpha=0.8)
+    ax.add_artist(escala)
+
+    # 8.4 Flecha del Norte (Esquina Superior Derecha)
+    # Usamos coordenadas relativas de los ejes (0 a 1) para posicionarlo siempre igual
+    ax.annotate('N', xy=(0.96, 0.96), xytext=(0.96, 0.88),
+                arrowprops=dict(facecolor='black', width=4, headwidth=12),
+                ha='center', va='center', fontsize=20, fontweight='bold',
+                xycoords='axes fraction', textcoords='axes fraction',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='none'))
+
+    # 8.5 Cuadro de Datos (Esquina Superior Izquierda)
+    texto_info = f"ESTABLECIMIENTO: {establecimiento.upper()}\nLOTE: {lote.upper()}\nCULTIVO: {cultivo.upper()}\nMAPA DE RENDIMIENTO"
+    ax.text(0.02, 0.98, texto_info, transform=ax.transAxes, fontsize=14,
+            verticalalignment='top', fontweight='bold', color='black',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.9, edgecolor='gray'))
+
+    # Guardamos los archivos de alta calidad
+    ruta_png_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.png")
+    ruta_pdf_final = os.path.join(carpeta_salida, f"Mapa_{lote}_final.pdf")
+    
+    plt.savefig(ruta_png_final, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(ruta_pdf_final, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.close(fig) # Cerramos el lienzo para liberar memoria
+
+    return ruta_final_tif, ruta_final_pdf, ruta_txt, ruta_png_final, ruta_pdf_final
+  

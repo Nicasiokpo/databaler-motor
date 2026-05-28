@@ -9,3 +9,5 @@ shapely
 scipy
 rasterio
 matplotlib
+contextily
+matplotlib-scalebar
