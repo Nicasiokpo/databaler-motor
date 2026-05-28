@@ -92,17 +92,14 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
     print("5/7 Renderizando colores RGB...")
     datos_validos = sup[~np.isnan(sup)]
     limites = np.percentile(datos_validos, [0, 20, 40, 60, 80, 100])
-    colores_hex = ['#d7191c', '#ffb101', '#ffff01', '#17ae00', '#015800']
+    
+    # EL TRUCO: Cambiamos los 00 finales de los verdes por 01 para que no se borren
+    colores_hex = ['#d7191c', '#ffb101', '#ffff01', '#17ae01', '#015801']
     cmap = mcolors.ListedColormap(colores_hex)
     norm = mcolors.BoundaryNorm(limites, cmap.N)
     
-    # Creamos la imagen coloreada (4 bandas: RGBA)
     imagen_coloreada = cmap(norm(sup))
-    
-    # FORZAMOS LA TRANSPARENCIA ABSOLUTA EN LOS NULOS
-    # Ponemos todas las bandas (RGB y Alfa) en 0 donde no hay datos
     imagen_coloreada[np.isnan(sup)] = [0.0, 0.0, 0.0, 0.0] 
-    
     imagen = (imagen_coloreada * 255).astype(np.uint8)
     
     del sup, datos_validos, imagen_coloreada
@@ -112,16 +109,14 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max, lote, esta
     print("6/7 Guardando GeoTIFF final...")
     ruta_final_tif = os.path.join(carpeta_salida, "resultado.tif")
     
-    # Al poner nodata=0, le decimos explícitamente a los visores GIS que ignoren los ceros
+    # Volamos el parámetro "nodata=0" que nos estaba rompiendo la escala
     with rasterio.open(
         ruta_final_tif, 'w', driver='GTiff', 
         height=imagen.shape[0], width=imagen.shape[1], 
         count=4, dtype='uint8', crs=crs_metros, transform=transform,
-        nodata=0,
-        compress='lzw' # Agregamos compresión ligera para evitar errores de renderizado
+        compress='lzw'
     ) as dst:
-        for i in range(4): 
-            dst.write(imagen[:, :, i], i+1)
+        for i in range(4): dst.write(imagen[:, :, i], i+1)
             
     # 7. GENERAR GEOPDF
     print("7/7 Compilando GeoPDF georreferenciado...")
