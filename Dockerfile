@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 4. Copiamos tus motores de Python
 COPY api.py .
 COPY motor.py .
+COPY motor_ndvi.py .
+COPY api_ndvi.py .
 
 # 5. Prendemos el servidor
 CMD uvicorn api:app --host 0.0.0.0 --port ${PORT:-10000}
