@@ -8,7 +8,7 @@ import uuid
 import traceback
 from motor import ejecutar_pipeline
 
-app = FastAPI(title="Motor de Rinde Databaler")
+app = FastAPI(title="Motor de Rinde LoteLimpio")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -17,9 +17,9 @@ async def procesar_mapa(
     archivos: list[UploadFile] = File(...),
     rinde_min: float = Form(...),
     rinde_max: float = Form(...),
-    lote: str = Form(...),           # <-- NUEVO
-    establecimiento: str = Form(...),# <-- NUEVO
-    cultivo: str = Form(...)         # <-- NUEVO
+    lote: str = Form(...),
+    establecimiento: str = Form(...),
+    cultivo: str = Form(...)
 ):
     id_proceso = str(uuid.uuid4())
     carpeta_trabajo = os.path.join("temp_uploads", id_proceso)
@@ -35,23 +35,19 @@ async def procesar_mapa(
             if archivo.filename.lower().endswith('.shp'): 
                 ruta_shp = ruta_destino
 
-        # Le pasamos todos los datos al motor
-        tif_resultado, pdf_avenza, txt_resultado, png_final, pdf_final = ejecutar_pipeline(
+        # 2. EJECUTAR MOTOR (Limpio y directo)
+        tif_resultado, pdf_avenza, txt_resultado = ejecutar_pipeline(
             ruta_shp, carpeta_trabajo, rinde_min, rinde_max, lote, establecimiento, cultivo
         )
 
-        # Empaquetado final en ZIP
-        archivo_zip = os.path.join(carpeta_trabajo, "resultado_final.zip")
+        # 3. EMPAQUETADO FINAL EN ZIP
+        archivo_zip = os.path.join(carpeta_trabajo, f"LoteLimpio_{lote}.zip")
         with zipfile.ZipFile(archivo_zip, 'w') as zipf:
-            if os.path.exists(tif_resultado): zipf.write(tif_resultado, "mapa_rinde_renderizado.tif")
+            if os.path.exists(tif_resultado): zipf.write(tif_resultado, "mapa_rinde.tif")
             if pdf_avenza and os.path.exists(pdf_avenza): zipf.write(pdf_avenza, "MAPA_AVENZA.pdf")
             if txt_resultado and os.path.exists(txt_resultado): zipf.write(txt_resultado, "estadisticas_lote.txt")
-            
-            # Agregamos las nuevas composiciones de impresión
-            if os.path.exists(png_final): zipf.write(png_final, f"MAPA_{lote}_IMPRESION.png")
-            if os.path.exists(pdf_final): zipf.write(pdf_final, f"MAPA_{lote}_IMPRESION.pdf")
 
-        return FileResponse(archivo_zip, media_type='application/zip', filename="mapa_procesado.zip")
+        return FileResponse(archivo_zip, media_type='application/zip', filename=f"LoteLimpio_{lote}.zip")
 
     except Exception as e:
         traceback.print_exc()
