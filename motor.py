@@ -11,8 +11,9 @@ from rasterio.features import geometry_mask
 import matplotlib.colors as mcolors
 import os
 
-def ejecutar_pipeline(ruta_shp, carpeta_salida):
+def ejecutar_pipeline(ruta_shp, carpeta_salida, rinde_min, rinde_max):
     print("--- INICIANDO PIPELINE AGRONÓMICO ---")
+    # ...
     columna_rinde = 'VRYIELDMAS'
     
     # 1. CARGA
@@ -40,13 +41,29 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida):
     mapa_hex = gpd.GeoDataFrame(grilla_agrupada, geometry='geometry', crs="EPSG:4326")
     
     # 3. FILTRO
-    print("3/6 Filtrando valores...")
-    rinde_min = 0.5 # Volvemos a toneladas
-    rinde_max = 3.5
+    # 3. FILTRO Y ESTADÍSTICAS
+    print(f"3/7 Filtrando valores entre {rinde_min} y {rinde_max}...")
+    
     mapa_limpio = mapa_hex[(mapa_hex[columna_rinde] >= rinde_min) & (mapa_hex[columna_rinde] <= rinde_max)]
     
     if len(mapa_limpio) == 0:
-        raise ValueError(f"¡El mapa quedó vacío tras el filtro ({rinde_min} a {rinde_max} t/ha)!")
+        raise ValueError(f"¡El mapa quedó vacío tras el filtro!")
+
+    # --- CÁLCULO DE ESTADÍSTICAS DEL LOTE LIMPIO ---
+    media = mapa_limpio[columna_rinde].mean()
+    std = mapa_limpio[columna_rinde].std()
+    cv = (std / media) * 100 if media > 0 else 0
+    min_real = mapa_limpio[columna_rinde].min()
+    max_real = mapa_limpio[columna_rinde].max()
+
+    ruta_txt = os.path.join(carpeta_salida, "estadisticas.txt")
+    with open(ruta_txt, "w", encoding="utf-8") as f:
+        f.write("--- REPORTE DE LOTE PROCESADO ---\n")
+        f.write(f"Rinde Promedio: {media:.2f} t/ha\n")
+        f.write(f"Mínimo real: {min_real:.2f} t/ha\n")
+        f.write(f"Máximo real: {max_real:.2f} t/ha\n")
+        f.write(f"Coef. Variación (CV): {cv:.2f}%\n")
+        f.write(f"Hexágonos útiles: {len(mapa_limpio)}\n")
 
     # 4. INTERPOLACIÓN Y SUAVIZADO
     print("4/6 Interpolando...")
@@ -109,5 +126,5 @@ def ejecutar_pipeline(ruta_shp, carpeta_salida):
         print(f"   [ERROR] GDAL falló: {e}")
         ruta_final_pdf = None
 
-    # AHORA EL MOTOR DEVUELVE DOS ARCHIVOS
-    return ruta_final_tif, ruta_final_pdf
+    # Al final de todo tu motor.py, cambiá el return por esto:
+    return ruta_final_tif, ruta_final_pdf, ruta_txt
