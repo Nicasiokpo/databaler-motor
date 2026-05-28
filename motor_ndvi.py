@@ -1,13 +1,11 @@
 import ee
 import json
-import os
 
-def inicializar_gee():
+def conectar_satelite():
+    # Esta es la ruta donde Render monta tu archivo JSON secreto
+    key_path = '/etc/secrets/gee_key.json'
+    
     try:
-        # Render monta los archivos secretos aquí
-        key_path = '/etc/secrets/gee_key.json'
-        
-        # Leemos la key desde el archivo secreto de Render
         with open(key_path, 'r') as f:
             service_account_info = json.load(f)
             
@@ -16,14 +14,13 @@ def inicializar_gee():
             key_path
         )
         
+        # Inicializamos la conexión
         ee.Initialize(credentials)
+        print("Módulo NDVI: Conexión con Earth Engine OK")
         return True
     except Exception as e:
-        print(f"Error crítico conectando con GEE: {e}")
+        print(f"Módulo NDVI: Error conectando con GEE: {e}")
         return False
 
-# Probamos la conexión apenas se importa el módulo
-if inicializar_gee():
-    print("Módulo NDVI: Conexión con Earth Engine OK")
-else:
-    print("Módulo NDVI: Falló la conexión")
+# Probamos la conexión al importar el módulo
+conectar_satelite()
