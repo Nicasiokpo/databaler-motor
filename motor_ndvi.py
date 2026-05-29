@@ -13,7 +13,7 @@ import gc
 import shutil
 from google.oauth2 import service_account
 
-    # ==========================================
+# ==========================================
 # 1. CONEXIÓN CON GOOGLE EARTH ENGINE
 # ==========================================
 def conectar_satelite():
@@ -25,8 +25,11 @@ def conectar_satelite():
         # 1. Leemos la llave con el método moderno de Google Auth
         credentials = service_account.Credentials.from_service_account_file(key_path)
         
-        # 2. Le inyectamos explícitamente el permiso (scope) de Earth Engine
-        scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/earthengine'])
+        # 2. Le inyectamos explícitamente el permiso de GEE y de CLOUD PLATFORM
+        scoped_credentials = credentials.with_scopes([
+            'https://www.googleapis.com/auth/earthengine',
+            'https://www.googleapis.com/auth/cloud-platform'  # <-- LA LLAVE MAESTRA
+        ])
         
         # 3. Inicializamos forzando el proyecto
         ee.Initialize(scoped_credentials, project='nicasio-mc') 
