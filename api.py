@@ -9,6 +9,7 @@ import traceback
 import motor_ndvi 
 from motor import ejecutar_pipeline
 from typing import List
+from typing import Annotated
 
 app = FastAPI(title="Motor de Rinde LoteLimpio")
 
@@ -62,18 +63,11 @@ async def procesar_mapa(
 # ==========================================
 # ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
 # ==========================================
-
-# ==========================================
-# ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
-# ==========================================
-# ==========================================
-# ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
-# ==========================================
 @app.post("/procesar-ndvi/")
 async def procesar_ndvi(
-    fecha_inicio: str = Form(...),
-    fecha_fin: str = Form(...),
-    file: UploadFile = File(...)
+    fecha_inicio: Annotated[str, Form()],
+    fecha_fin: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()]
 ):
     id_sesion = str(uuid.uuid4())
     carpeta_trabajo = f"temp_{id_sesion}"
