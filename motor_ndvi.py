@@ -12,6 +12,7 @@ import subprocess
 import gc
 import shutil
 from google.oauth2 import service_account
+import rasterio.mask
 
 # ==========================================
 # 1. CONEXIÓN CON GOOGLE EARTH ENGINE
@@ -80,12 +81,15 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     with open(ruta_cruda_tif, "wb") as f:
         f.write(respuesta.content)
     
-    # 6. Procesamiento de Matrices y Estadísticas
+    # 6. Procesamiento de Matrices, Recorte Exacto y Estadísticas
     with rasterio.open(ruta_cruda_tif) as src:
-        matriz_ndvi = src.read(1)
-        transform = src.transform
+        # ¡LA MAGIA! Usamos tu polígono como molde para recortar el rectángulo
+        out_image, out_transform = rasterio.mask.mask(src, [geom], crop=True, nodata=np.nan)
+        matriz_ndvi = out_image[0]
+        transform = out_transform
         crs_original = src.crs
         
+    # Ahora la máscara de válidos excluye perfectamente el fondo
     mascara_validos = (~np.isnan(matriz_ndvi)) & (matriz_ndvi >= -1) & (matriz_ndvi <= 1)
     datos_filtrados = matriz_ndvi[mascara_validos]
     
