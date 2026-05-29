@@ -61,11 +61,12 @@ async def procesar_mapa(
 # ==========================================
 # ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
 # ==========================================
+
 @app.post("/procesar-ndvi/")
 async def procesar_ndvi(
     fecha_inicio: str = Form(...),
     fecha_fin: str = Form(...),
-    archivos: list[UploadFile] = File(...) # <-- Ahora recibe la lista de archivos sueltos
+    archivos: list[UploadFile] = File(...)  # <--- ESTA ES LA LÍNEA CLAVE
 ):
     # Crear un identificador único para no mezclar peticiones
     id_sesion = str(uuid.uuid4())
