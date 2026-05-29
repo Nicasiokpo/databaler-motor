@@ -63,35 +63,40 @@ async def procesar_mapa(
 # ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
 # ==========================================
 
+# ==========================================
+# ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
+# ==========================================
 @app.post("/procesar-ndvi/")
 async def procesar_ndvi(
     fecha_inicio: str = Form(...),
     fecha_fin: str = Form(...),
-    archivos: List[UploadFile] = File(...)  # <--- ESTA ES LA LÍNEA CLAVE
+    file: UploadFile = File(...)  # Volvemos a pedir UN solo archivo (el ZIP)
 ):
-    # Crear un identificador único para no mezclar peticiones
+    # Crear un identificador único
     id_sesion = str(uuid.uuid4())
     carpeta_trabajo = f"temp_{id_sesion}"
     os.makedirs(carpeta_trabajo, exist_ok=True)
     
     try:
-        ruta_shp_final = None
+        # 1. Guardar el ZIP que sube el usuario
+        ruta_zip_entrada = os.path.join(carpeta_trabajo, file.filename)
+        with open(ruta_zip_entrada, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        # 2. Descomprimir el lote adentro de la carpeta
+        with zipfile.ZipFile(ruta_zip_entrada, 'r') as zip_ref:
+            zip_ref.extractall(carpeta_trabajo)
+            
+        # 3. Buscar cuál de los archivos extraídos es el .shp principal
+        archivos = os.listdir(carpeta_trabajo)
+        shp_detectado = [f for f in archivos if f.endswith('.shp')]
         
-        # 1. Guardar todos los archivos sueltos (.shp, .shx, .dbf, .prj) en la carpeta
-        for archivo in archivos:
-            ruta_destino = os.path.join(carpeta_trabajo, archivo.filename)
-            with open(ruta_destino, "wb") as buffer:
-                shutil.copyfileobj(archivo.file, buffer)
+        if not shp_detectado:
+            raise ValueError("El archivo ZIP no contiene ningún archivo .shp válido.")
             
-            # Detectar cuál es el principal para pasárselo al motor
-            if archivo.filename.lower().endswith('.shp'):
-                ruta_shp_final = ruta_destino
-                
-        # Chequeo de seguridad por si el usuario se olvidó de seleccionar el .shp
-        if not ruta_shp_final:
-            raise ValueError("No se encontró ningún archivo .shp entre los documentos subidos.")
-            
-        # 2. Invocar a nuestro nuevo motor satelital de GEE
+        ruta_shp_final = os.path.join(carpeta_trabajo, shp_detectado[0])
+        
+        # 4. Invocar al motor satelital
         ruta_resultado_zip = motor_ndvi.procesar_lote_gee(
             ruta_shp=ruta_shp_final,
             fecha_inicio=fecha_inicio,
@@ -99,7 +104,7 @@ async def procesar_ndvi(
             carpeta_salida=carpeta_trabajo
         )
         
-        # 3. Retornar el archivo ZIP al usuario en la web
+        # 5. Devolver el mapa procesado
         return FileResponse(
             path=ruta_resultado_zip, 
             filename="resultado_ndvi.zip", 
