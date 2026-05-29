@@ -59,7 +59,7 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     
     imagen_final = ndvi.addBands([ndmi, ndre])
     
-    # 4. Descarga del TIFF
+    # 4. Descarga del TIFF crudo de GEE
     url = imagen_final.getDownloadURL({
         'scale': 10,
         'crs': 'EPSG:4326',
@@ -69,22 +69,16 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     
     respuesta = requests.get(url)
     
+    # DEBUG: ver qué devuelve GEE realmente (opcional, podés dejarlo)
     print(f"DEBUG GEE: status={respuesta.status_code}, content_type={respuesta.headers.get('content-type')}, size={len(respuesta.content)}")
-    print(f"DEBUG GEE primeros bytes: {respuesta.content[:200]}")
     
     if respuesta.status_code != 200:
         raise ValueError(f"GEE respondió con error {respuesta.status_code}: {respuesta.text[:300]}")
     
-    if not respuesta.content[:4] == b'PK\x03\x04':
-        raise ValueError(f"GEE no devolvió un ZIP. Respuesta: {respuesta.content[:300]}")
-    
-    with zipfile.ZipFile(io.BytesIO(respuesta.content)) as z:
-        z.extractall(carpeta_salida)
-    
     # 5. Buscar el TIF descargado
-    archivos_en_carpeta = os.listdir(carpeta_salida)
-    tif_descargado = [f for f in archivos_en_carpeta if f.endswith('.tif')][0]
-    ruta_cruda_tif = os.path.join(carpeta_salida, tif_descargado)
+    ruta_cruda_tif = os.path.join(carpeta_salida, "imagen_cruda.tif")
+    with open(ruta_cruda_tif, "wb") as f:
+        f.write(respuesta.content)
     
     # 6. Procesamiento de Matrices y Estadísticas
     with rasterio.open(ruta_cruda_tif) as src:
