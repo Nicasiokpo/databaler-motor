@@ -12,7 +12,24 @@ import subprocess
 import gc
 import shutil
 
-# ... (dejá la función conectar_satelite igual que antes)
+def conectar_satelite():
+    key_path = '/etc/secrets/gee_key.json'
+    if not os.path.exists(key_path):
+        print("ERROR: No se encuentra la llave secreta de GEE.")
+        return False
+    try:
+        with open(key_path, 'r') as f:
+            service_account_info = json.load(f)
+        credentials = ee.ServiceAccountCredentials(service_account_info['client_email'], key_path)
+        
+        # Inicialización con el proyecto explícito de Google Cloud
+        ee.Initialize(credentials, project='nicasio-mc') 
+        
+        print("Módulo NDVI: ¡Conexión con Earth Engine OK!")
+        return True
+    except Exception as e:
+        print(f"Módulo NDVI: Error de conexión: {e}")
+        return False
 
 def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     # 1. Leer el polígono y pasarlo a Lat/Lon
