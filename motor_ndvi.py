@@ -12,7 +12,8 @@ import subprocess
 import gc
 import shutil
 
- key_path = '/etc/secrets/gee_key.json'
+def conectar_satelite():
+    key_path = '/etc/secrets/gee_key.json'
     if not os.path.exists(key_path):
         raise RuntimeError("No se encuentra /etc/secrets/gee_key.json")
     try:
@@ -27,7 +28,7 @@ import shutil
         raise RuntimeError(f"Error GEE: {e}")
 
 def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
-    conectar_satelite()  # ← que lance error si falla, no que lo ignore
+    conectar_satelite()
     # 1. Leer el polígono y pasarlo a Lat/Lon
     gdf = gpd.read_file(ruta_shp)
     gdf_4326 = gdf.to_crs(epsg=4326)
@@ -55,7 +56,7 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     
     imagen_final = ndvi.addBands([ndmi, ndre])
     
-    # 4. Descarga del TIFF crudo multipropósito y DEBUG de GEE
+    # 4. Descarga del TIFF
     url = imagen_final.getDownloadURL({
         'scale': 10,
         'crs': 'EPSG:4326',
@@ -65,11 +66,9 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     
     respuesta = requests.get(url)
     
-    # DEBUG: ver qué devuelve GEE realmente
     print(f"DEBUG GEE: status={respuesta.status_code}, content_type={respuesta.headers.get('content-type')}, size={len(respuesta.content)}")
     print(f"DEBUG GEE primeros bytes: {respuesta.content[:200]}")
     
-    # Validar antes de intentar abrir como ZIP
     if respuesta.status_code != 200:
         raise ValueError(f"GEE respondió con error {respuesta.status_code}: {respuesta.text[:300]}")
     
