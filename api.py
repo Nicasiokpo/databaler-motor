@@ -66,28 +66,38 @@ async def procesar_mapa(
 # ==========================================
 # ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
 # ==========================================
+# ==========================================
+# ENDPOINT 2: PROCESAMIENTO SATELITAL (NDVI)
+# ==========================================
 @app.post("/procesar-ndvi/")
 async def procesar_ndvi(
     fecha_inicio: str = Form(...),
     fecha_fin: str = Form(...),
-    file: UploadFile = File(...)  # Volvemos a pedir UN solo archivo (el ZIP)
+    file: UploadFile = File(...)
 ):
-    # Crear un identificador único
     id_sesion = str(uuid.uuid4())
     carpeta_trabajo = f"temp_{id_sesion}"
     os.makedirs(carpeta_trabajo, exist_ok=True)
     
     try:
-        # 1. Guardar el ZIP que sube el usuario
+        # 1. Leer el contenido completo en memoria primero
+        contenido = await file.read()
+        
+        # 2. Validar que realmente sea un ZIP antes de guardar
+        # Agregamos que nos muestre qué bytes recibió si falla
+        if not contenido[:4] == b'PK\x03\x04':
+            raise ValueError(f"El archivo recibido no es un ZIP válido. Tamaño: {len(contenido)} bytes. Inicia con: {contenido[:4]}")
+        
+        # 3. Guardar el ZIP
         ruta_zip_entrada = os.path.join(carpeta_trabajo, file.filename)
         with open(ruta_zip_entrada, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            buffer.write(contenido)
             
-        # 2. Descomprimir el lote adentro de la carpeta
+        # 4. Descomprimir
         with zipfile.ZipFile(ruta_zip_entrada, 'r') as zip_ref:
             zip_ref.extractall(carpeta_trabajo)
             
-        # 3. Buscar cuál de los archivos extraídos es el .shp principal
+        # 5. Buscar el .shp
         archivos = os.listdir(carpeta_trabajo)
         shp_detectado = [f for f in archivos if f.endswith('.shp')]
         
@@ -96,7 +106,7 @@ async def procesar_ndvi(
             
         ruta_shp_final = os.path.join(carpeta_trabajo, shp_detectado[0])
         
-        # 4. Invocar al motor satelital
+        # 6. Invocar al motor satelital
         ruta_resultado_zip = motor_ndvi.procesar_lote_gee(
             ruta_shp=ruta_shp_final,
             fecha_inicio=fecha_inicio,
@@ -104,7 +114,7 @@ async def procesar_ndvi(
             carpeta_salida=carpeta_trabajo
         )
         
-        # 5. Devolver el mapa procesado
+        # 7. Devolver el mapa procesado
         return FileResponse(
             path=ruta_resultado_zip, 
             filename="resultado_ndvi.zip", 
