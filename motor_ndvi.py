@@ -11,21 +11,32 @@ import matplotlib.colors as mcolors
 import subprocess
 import gc
 import shutil
+from google.oauth2 import service_account
 
+def conectar_satelite():
+    # ==========================================
+# 1. CONEXIÓN CON GOOGLE EARTH ENGINE
+# ==========================================
 def conectar_satelite():
     key_path = '/etc/secrets/gee_key.json'
     if not os.path.exists(key_path):
-        raise RuntimeError("No se encuentra /etc/secrets/gee_key.json")
+        print("ERROR: No se encuentra la llave secreta de GEE.")
+        return False
     try:
-        with open(key_path, 'r') as f:
-            service_account_info = json.load(f)
-        print(f"DEBUG: client_email = {service_account_info['client_email']}")
-        credentials = ee.ServiceAccountCredentials(service_account_info['client_email'], key_path)
-        ee.Initialize(credentials, project='nicasio-mc')
+        # 1. Leemos la llave con el método moderno de Google Auth
+        credentials = service_account.Credentials.from_service_account_file(key_path)
+        
+        # 2. Le inyectamos explícitamente el permiso (scope) de Earth Engine
+        scoped_credentials = credentials.with_scopes(['https://www.googleapis.com/auth/earthengine'])
+        
+        # 3. Inicializamos forzando el proyecto
+        ee.Initialize(scoped_credentials, project='nicasio-mc') 
+        
         print("Módulo NDVI: ¡Conexión con Earth Engine OK!")
         return True
     except Exception as e:
-        raise RuntimeError(f"Error GEE: {e}")
+        print(f"Módulo NDVI: Error de conexión: {e}")
+        return False
 
 def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     conectar_satelite()
