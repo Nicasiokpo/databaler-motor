@@ -19,26 +19,16 @@ from google.oauth2 import service_account
 def conectar_satelite():
     key_path = '/etc/secrets/gee_key.json'
     if not os.path.exists(key_path):
-        print("ERROR: No se encuentra la llave secreta de GEE.")
-        return False
+        raise RuntimeError("No se encuentra /etc/secrets/gee_key.json")
     try:
-        # 1. Leemos la llave con el método moderno de Google Auth
+        with open(key_path, 'r') as f:
+            service_account_info = json.load(f)
         credentials = ee.ServiceAccountCredentials(service_account_info['client_email'], key_file=key_path)
-        
-        # 2. Le inyectamos explícitamente el permiso de GEE y de CLOUD PLATFORM
-        scoped_credentials = credentials.with_scopes([
-            'https://www.googleapis.com/auth/earthengine',
-            'https://www.googleapis.com/auth/cloud-platform'  # <-- LA LLAVE MAESTRA
-        ])
-        
-        # 3. Inicializamos forzando el proyecto
-        ee.Initialize(scoped_credentials, project='nicasio-mc') 
-        
+        ee.Initialize(credentials, project='nicasio-mc')
         print("Módulo NDVI: ¡Conexión con Earth Engine OK!")
         return True
     except Exception as e:
-        print(f"Módulo NDVI: Error de conexión: {e}")
-        return False
+        raise RuntimeError(f"Error GEE: {e}")
 
 def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     conectar_satelite()
