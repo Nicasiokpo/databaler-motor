@@ -13,7 +13,6 @@ import gc
 import shutil
 from google.oauth2 import service_account
 
-def conectar_satelite():
     # ==========================================
 # 1. CONEXIÓN CON GOOGLE EARTH ENGINE
 # ==========================================
