@@ -8,6 +8,7 @@ import uuid
 import traceback
 import motor_ndvi 
 from motor import ejecutar_pipeline
+from typing import List
 
 app = FastAPI(title="Motor de Rinde LoteLimpio")
 
@@ -66,7 +67,7 @@ async def procesar_mapa(
 async def procesar_ndvi(
     fecha_inicio: str = Form(...),
     fecha_fin: str = Form(...),
-    archivos: list[UploadFile] = File(...)  # <--- ESTA ES LA LÍNEA CLAVE
+    archivos: List[UploadFile] = File(...)  # <--- ESTA ES LA LÍNEA CLAVE
 ):
     # Crear un identificador único para no mezclar peticiones
     id_sesion = str(uuid.uuid4())
