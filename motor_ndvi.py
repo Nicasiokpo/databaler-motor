@@ -30,16 +30,19 @@ def conectar_satelite():
 
 def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida):
     # 1. Leer el polígono y pasarlo a Lat/Lon
+   # 1. Leer el polígono y pasarlo a Lat/Lon
     gdf = gpd.read_file(ruta_shp)
     gdf_4326 = gdf.to_crs(epsg=4326)
     
     geom = gdf_4326.geometry.iloc[0]
     if geom.geom_type == 'Polygon':
-        coords = list(geom.exterior.coords)
+        # Aseguramos el formato exacto [lon, lat]
+        coords = [[lon, lat] for lon, lat in list(geom.exterior.coords)]
     elif geom.geom_type == 'MultiPolygon':
-        coords = list(geom.geoms[0].exterior.coords)
+        coords = [[lon, lat] for lon, lat in list(geom.geoms[0].exterior.coords)]
         
-    zona_interes = ee.Geometry.Polygon(coords)
+    # ¡LA MAGIA ESTÁ ACÁ! Ponemos coords entre corchetes para que GEE entienda que es un anillo
+    zona_interes = ee.Geometry.Polygon([coords])
 
     # 2. Consultar Sentinel-2 y armar el compuesto libre de nubes
     coleccion = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
