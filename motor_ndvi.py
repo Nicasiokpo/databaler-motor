@@ -23,7 +23,7 @@ def conectar_satelite():
         return False
     try:
         # 1. Leemos la llave con el método moderno de Google Auth
-        credentials = service_account.Credentials.from_service_account_file(key_path)
+        credentials = ee.ServiceAccountCredentials(service_account_info['client_email'], key_file=key_path)
         
         # 2. Le inyectamos explícitamente el permiso de GEE y de CLOUD PLATFORM
         scoped_credentials = credentials.with_scopes([
