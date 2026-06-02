@@ -1,5 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import shutil
@@ -12,7 +12,24 @@ from typing import List, Annotated
 
 app = FastAPI(title="Motor de Rinde LoteLimpio")
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 # ==========================================
 # ENDPOINT 1: PROCESAMIENTO DE MAPAS DE RINDE
@@ -72,11 +89,9 @@ async def procesar_ndvi(
     os.makedirs(carpeta_trabajo, exist_ok=True)
 
     try:
-        # Validar indice
         if indice not in ['NDVI', 'NDMI', 'NDRE']:
             raise ValueError("Indice no valido. Usar: NDVI, NDMI o NDRE.")
 
-        # Leer y validar ZIP
         contenido = await file.read()
         if not contenido[:4] == b'PK\x03\x04':
             raise ValueError(f"El archivo recibido no es un ZIP valido. Tamanio: {len(contenido)} bytes.")
