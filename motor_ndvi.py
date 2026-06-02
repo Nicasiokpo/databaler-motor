@@ -8,9 +8,6 @@ import io
 import numpy as np
 import rasterio
 import rasterio.mask
-import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import subprocess
 import gc
 from google.oauth2 import service_account
@@ -64,6 +61,9 @@ def conectar_satelite():
 # 2. GENERADOR DE LEYENDA PNG
 # ==========================================
 def generar_leyenda_png(indice, limites, ruta_salida):
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
+
     config = INDICES[indice]
     colores = config['colores']
     etiquetas = config['etiquetas']
@@ -93,7 +93,7 @@ def generar_leyenda_png(indice, limites, ruta_salida):
                 transform=ax.transAxes, ha='center', va='top',
                 fontsize=6, color='#333333', style='italic')
 
-    ax.text(0.5, 0.1, f"Percentiles 0-20-40-60-80-100 del lote",
+    ax.text(0.5, 0.1, "Percentiles 0-20-40-60-80-100 del lote",
             transform=ax.transAxes, ha='center', va='top',
             fontsize=5.5, color='#888888')
 
@@ -108,6 +108,7 @@ def generar_leyenda_png(indice, limites, ruta_salida):
 # ==========================================
 def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
                       indice='NDVI', nubosidad_max=20):
+    import matplotlib.colors as mcolors
 
     if indice not in INDICES:
         raise ValueError(f"Indice '{indice}' no valido. Usar: NDVI, NDMI o NDRE.")
@@ -115,10 +116,8 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
     config = INDICES[indice]
     conectar_satelite()
 
-    # Nombre base del lote desde el shapefile
     nombre_lote = os.path.splitext(os.path.basename(ruta_shp))[0]
 
-    # 1. Leer el poligono y pasarlo a Lat/Lon
     gdf = gpd.read_file(ruta_shp)
     gdf_4326 = gdf.to_crs(epsg=4326)
 
@@ -130,7 +129,6 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
 
     zona_interes = ee.Geometry.Polygon([coords])
 
-    # 2. Consultar Sentinel-2
     coleccion = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                  .filterBounds(zona_interes)
                  .filterDate(fecha_inicio, fecha_fin)
@@ -138,12 +136,10 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
 
     imagen_limpia = coleccion.median().clip(zona_interes)
 
-    # 3. Calcular solo el indice solicitado
     banda_a = config['bandas'][0]
     banda_b = config['bandas'][1]
     imagen_indice = imagen_limpia.normalizedDifference([banda_a, banda_b]).rename(indice)
 
-    # 4. Descarga del TIFF crudo
     url = imagen_indice.getDownloadURL({
         'scale': 10,
         'crs': 'EPSG:4326',
@@ -157,13 +153,11 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
     if respuesta.status_code != 200:
         raise ValueError(f"GEE respondio con error {respuesta.status_code}: {respuesta.text[:300]}")
 
-    # Guardar TIF crudo (para QGIS con valores reales)
     nombre_tif_crudo = f"{nombre_lote}_{indice}_valores.tif"
     ruta_cruda_tif = os.path.join(carpeta_salida, nombre_tif_crudo)
     with open(ruta_cruda_tif, "wb") as f:
         f.write(respuesta.content)
 
-    # 5. Procesamiento con recorte exacto al poligono
     with rasterio.open(ruta_cruda_tif) as src:
         out_image, out_transform = rasterio.mask.mask(src, [geom], crop=True, nodata=np.nan)
         matriz = out_image[0]
@@ -176,7 +170,6 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
     if len(datos_filtrados) == 0:
         raise ValueError("El archivo satelital no contiene pixeles validos dentro del lote.")
 
-    # 6. Estadisticas
     val_min = float(np.min(datos_filtrados))
     val_max = float(np.max(datos_filtrados))
     val_prom = float(np.mean(datos_filtrados))
@@ -196,7 +189,6 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
         f.write(f"{indice} Promedio: {val_prom:.4f}\n")
         f.write(f"Desviacion Estandar: {val_std:.4f}\n")
 
-    # 7. Renderizar colores RGB
     limites = np.percentile(datos_filtrados, [0, 20, 40, 60, 80, 100])
     cmap = mcolors.ListedColormap(config['colores'])
     norm = mcolors.BoundaryNorm(limites, cmap.N)
@@ -222,12 +214,10 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
     del imagen_rgb, datos_filtrados
     gc.collect()
 
-    # 8. Leyenda PNG
     nombre_leyenda = f"{nombre_lote}_{indice}_leyenda.png"
     ruta_leyenda = os.path.join(carpeta_salida, nombre_leyenda)
     generar_leyenda_png(indice, limites, ruta_leyenda)
 
-    # 9. GeoPDF para Avenza
     nombre_pdf = f"{nombre_lote}_{indice}_avenza.pdf"
     ruta_pdf = os.path.join(carpeta_salida, nombre_pdf)
     cmd_gdal = [
@@ -237,7 +227,6 @@ def procesar_lote_gee(ruta_shp, fecha_inicio, fecha_fin, carpeta_salida,
     ]
     subprocess.run(cmd_gdal, check=True)
 
-    # 10. Empaquetar ZIP con nombre del lote e indice
     nombre_zip = f"{nombre_lote}_{indice}.zip"
     ruta_zip = os.path.join(carpeta_salida, nombre_zip)
     with zipfile.ZipFile(ruta_zip, 'w') as zipf:
